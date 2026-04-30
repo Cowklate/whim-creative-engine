@@ -538,16 +538,31 @@ async function generate(){
         try{
           const ev=JSON.parse(ln.slice(6));
           if(ev.type==='progress'){setPB(ev.message,ev.percent);}
-          if(ev.type==='batch-done'){
-            currentSections.push(...ev.sections);
-            renderDeck();
-            setPB(`Batch ${ev.batchNumber} complete — ${currentSections.length} sections`,ev.percent);
+          if(ev.type==='section-done'){
+            currentSections.push(ev.section);
+            // Render slide immediately as it arrives
+            const body=document.getElementById('deck-body');
+            const slide=buildSlide(ev.section,currentSections.length);
+            body.appendChild(slide);
+            // Update feedback dropdown
+            const sel=document.getElementById('fb-target');
+            const n=currentSections.length;
+            const opt=document.createElement('option');
+            opt.value=n-1;opt.textContent=`Slide ${n} — ${ev.section.name||ev.section.code}`;
+            sel.appendChild(opt);
+            setPB(`Generated: ${ev.section.name} (${currentSections.length}/${ev.total})`,ev.percent);
           }
           if(ev.type==='done'){
-            currentSections=ev.sections;
-            renderDeck();
+            if(ev.sections&&ev.sections.length>currentSections.length){
+              // Render any remaining sections not yet shown
+              ev.sections.slice(currentSections.length).forEach((s,i)=>{
+                currentSections.push(s);
+                const body=document.getElementById('deck-body');
+                body.appendChild(buildSlide(s,currentSections.length));
+              });
+            }
             populateFeedbackTargets();
-            setPB('Complete',100);
+            setPB('Complete — all sections generated',100);
             setTimeout(()=>document.getElementById('pbar').classList.remove('on'),1200);
           }
           if(ev.type==='error') return showError(ev.message);
