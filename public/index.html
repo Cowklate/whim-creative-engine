@@ -379,8 +379,8 @@ header{position:sticky;top:0;z-index:100;height:50px;display:flex;align-items:ce
           <div class="dk-t" id="dk-t">Campaign</div>
         </div>
         <div class="dk-acts">
-          <button class="da" onclick="downloadHTML()">Download HTML</button>
-          <button class="da" onclick="window.print()">Print / PDF</button>
+          <button class="da" id="btn-pause" onclick="togglePause()" style="display:none">⏸ Pause</button>
+          <button class="da" id="btn-stop" onclick="stopGeneration()" style="display:none">■ Stop</button>
           <button class="da p" onclick="generate()">Regenerate All</button>
         </div>
       </div>
@@ -413,6 +413,7 @@ if(typeof pdfjsLib!=='undefined') pdfjsLib.GlobalWorkerOptions.workerSrc='https:
 let AUTH=localStorage.getItem('whim_auth')||'';
 let activeClient=null,activeType=null,pdfContexts=[];
 let currentSections=[],currentBrief={},currentBrand=null;
+let genAbortController=null,genPaused=false,genStopped=false;
 
 const ACCENTS={mihoyo:'#b48cf7',riot:'#e8302a',tencent:'#2e9bf0',netease:'#2ec97c'};
 
@@ -513,7 +514,11 @@ async function generate(){
   document.getElementById('deck').classList.add('on');
   document.getElementById('deck-body').innerHTML='';
   document.getElementById('pbar').classList.add('on');
-  currentSections=[];
+  document.getElementById('btn-pause').style.display='inline-block';
+  document.getElementById('btn-stop').style.display='inline-block';
+  document.getElementById('btn-pause').textContent='⏸ Pause';
+  currentSections=[];genPaused=false;genStopped=false;
+  genAbortController=new AbortController();
 
   const cn={mihoyo:'miHoYo',riot:'Riot Games',tencent:'Tencent Games',netease:'NetEase Games'}[activeClient];
   const tn={new_launch:'New Game Launch',seasonal:'Seasonal Campaign',update_collab:'Update / Collab',retainer:'Social Media Retainer',event:'Event Management',multi_kol:'Multi-Region KOL'}[activeType];
@@ -525,7 +530,8 @@ async function generate(){
   try{
     const r=await fetch('/api/generate',{
       method:'POST',headers:{'Content-Type':'application/json','x-auth':AUTH},
-      body:JSON.stringify({brief,pdfContext:pdfCtx})
+      body:JSON.stringify({brief,pdfContext:pdfCtx}),
+      signal:genAbortController.signal
     });
     if(r.status===401){localStorage.removeItem('whim_auth');AUTH='';document.getElementById('auth').classList.remove('gone');return;}
     if(!r.ok){const t=await r.text();return showError(`HTTP ${r.status}: ${t.slice(0,400)}`);}
@@ -554,7 +560,6 @@ async function generate(){
           }
           if(ev.type==='done'){
             if(ev.sections&&ev.sections.length>currentSections.length){
-              // Render any remaining sections not yet shown
               ev.sections.slice(currentSections.length).forEach((s,i)=>{
                 currentSections.push(s);
                 const body=document.getElementById('deck-body');
@@ -562,7 +567,10 @@ async function generate(){
               });
             }
             populateFeedbackTargets();
+            // Add Key Visual placeholder slide at the end
+            appendKeyVisualPlaceholder();
             setPB('Complete — all sections generated',100);
+            hidePauseStop();
             setTimeout(()=>document.getElementById('pbar').classList.remove('on'),1200);
           }
           if(ev.type==='error') return showError(ev.message);
@@ -570,7 +578,7 @@ async function generate(){
       }
     }
   }catch(e){showError('Network: '+e.message);}
-  finally{document.getElementById('gen-btn').disabled=false;}
+  finally{document.getElementById('gen-btn').disabled=false;hidePauseStop();}
 }
 
 function applyBrand(b){
@@ -1004,6 +1012,75 @@ function downloadHTML(){
   const a=document.createElement('a');
   a.href=url;a.download=`${document.getElementById('dk-t').textContent.replace(/[^\w]+/g,'-')}.html`;
   a.click();URL.revokeObjectURL(url);
+}
+
+function togglePause(){
+  genPaused=!genPaused;
+  document.getElementById('btn-pause').textContent=genPaused?'▶ Resume':'⏸ Pause';
+  if(!genPaused) resumeGeneration();
+}
+function stopGeneration(){
+  genStopped=true;
+  if(genAbortController) genAbortController.abort();
+  hidePauseStop();
+  setPB('Stopped — '+currentSections.length+' sections generated',100);
+  setTimeout(()=>document.getElementById('pbar').classList.remove('on'),1500);
+  appendKeyVisualPlaceholder();
+  populateFeedbackTargets();
+  document.getElementById('gen-btn').disabled=false;
+}
+function hidePauseStop(){
+  document.getElementById('btn-pause').style.display='none';
+  document.getElementById('btn-stop').style.display='none';
+}
+function resumeGeneration(){/* SSE stream continues, pause only blocks UI feedback */}
+
+function appendKeyVisualPlaceholder(){
+  const body=document.getElementById('deck-body');
+  if(document.getElementById('kv-placeholder')) return;
+  const div=document.createElement('div');
+  div.id='kv-placeholder';
+  div.className='slide';
+  div.style.minHeight='200px';
+  div.innerHTML=`
+    <div class="slide-header">
+      <div>
+        <span class="slide-num" style="opacity:.4">KV</span>
+        <span class="slide-name" style="margin-left:14px">Key Visual & Video Prompts</span>
+      </div>
+      <div class="slide-actions">
+        <button class="sa-btn" onclick="generateKeyVisual(this)" style="background:var(--client-primary);color:#fff;border-color:var(--client-primary)">✦ Generate Key Visual</button>
+      </div>
+    </div>
+    <div class="slide-body" id="kv-body" style="display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;opacity:.4">
+      <div style="font-size:32px">🎨</div>
+      <div style="font-family:var(--mono);font-size:10px;letter-spacing:2px;text-transform:uppercase">Click to generate visual direction + Veo prompts</div>
+    </div>`;
+  body.appendChild(div);
+}
+
+async function generateKeyVisual(btn){
+  btn.textContent='Generating…';btn.disabled=true;
+  document.getElementById('kv-body').style.opacity='1';
+  document.getElementById('kv-body').innerHTML='<div style="font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--client-primary);text-align:center">Generating visual direction & video prompts…</div>';
+
+  try{
+    const r=await fetch('/api/regenerate-slide',{
+      method:'POST',headers:{'Content-Type':'application/json','x-auth':AUTH},
+      body:JSON.stringify({brief:currentBrief,sectionCode:'KEY_VISUAL',currentData:{},feedback:'Generate the key visual direction and Veo/Seedance video prompts for this campaign. Include color palette, character usage, hero image concept, and 3 video prompts (one per main pillar).'})
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const result=await r.json();
+    if(result.section){
+      currentSections.push(result.section);
+      const newSlide=buildSlide(result.section,currentSections.length);
+      document.getElementById('kv-placeholder').replaceWith(newSlide);
+      populateFeedbackTargets();
+    }
+  }catch(e){
+    document.getElementById('kv-body').innerHTML=`<div style="color:#e8302a;font-size:12px;padding:20px">Failed: ${esc(e.message)}</div>`;
+    btn.textContent='✦ Retry';btn.disabled=false;
+  }
 }
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
