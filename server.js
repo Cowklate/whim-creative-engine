@@ -304,14 +304,27 @@ RULES: Real KOL names, real numbers, real platforms. Specific to regions. No lon
       const userPrompt = buildUserPrompt(brief, pdfContext);
 
       try {
-        const response = await anthropic.messages.create({
+        // Stream the section so Railway sees data flow continuously (avoids 60s connection timeout)
+        const stream = await anthropic.messages.create({
           model: MODEL,
           max_tokens: 3000,
+          stream: true,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }]
         });
 
-        const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+        let text = '';
+        let lastHeartbeat = Date.now();
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+            text += event.delta.text;
+            // Heartbeat every 1s to keep Railway connection alive
+            if (Date.now() - lastHeartbeat > 1000) {
+              send({ type: 'heartbeat' });
+              lastHeartbeat = Date.now();
+            }
+          }
+        }
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         
         if (jsonMatch) {
