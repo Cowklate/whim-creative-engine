@@ -61,7 +61,7 @@ function getOutputSpec(projectType) {
       { code: 'KOL_PLAN', name: 'KOL Plan', slides: 2 },
       { code: 'ADDITIONAL_RESOURCES', name: 'Additional Resources', slides: 1 },
       { code: 'BUDGET', name: 'Budget', slides: 1 },
-      { code: 'KEY_VISUAL', name: 'Key Visual & Video Prompts', slides: 2 }
+      // KEY_VISUAL generated on-demand via slide button
     ],
     seasonal: [
       { code: 'COVER', name: 'Cover', slides: 1 },
@@ -75,7 +75,7 @@ function getOutputSpec(projectType) {
       { code: 'SHOW_DETAIL', name: 'Pre-recorded Show', slides: 1 },
       { code: 'UGC_DETAIL', name: 'UGC Challenge', slides: 1 },
       { code: 'BUDGET', name: 'Budget', slides: 1 },
-      { code: 'KEY_VISUAL', name: 'Key Visual & Video Prompts', slides: 2 }
+      // KEY_VISUAL generated on-demand via slide button
     ],
     update_collab: [
       { code: 'COVER', name: 'Cover', slides: 1 },
@@ -87,7 +87,7 @@ function getOutputSpec(projectType) {
       { code: 'CONTENT_IDEATION', name: 'Content Ideation', slides: 1 },
       { code: 'KOL_PLAN', name: 'KOL Plan', slides: 1 },
       { code: 'BUDGET', name: 'Budget', slides: 1 },
-      { code: 'KEY_VISUAL', name: 'Key Visual & Video Prompts', slides: 1 }
+    // KEY_VISUAL generated on-demand
     ],
     retainer: [
       { code: 'COVER', name: 'Cover', slides: 1 },
@@ -117,7 +117,7 @@ function getOutputSpec(projectType) {
       { code: 'KOL_SHOWMATCH_ROSTER', name: 'KOL Showmatch Roster', slides: 2 },
       { code: 'KOC_TOURNAMENT', name: 'KOC Tournament', slides: 1 },
       { code: 'BUDGET', name: 'Budget', slides: 1 },
-      { code: 'KEY_VISUAL', name: 'Key Visual & Video Prompts', slides: 2 }
+      // KEY_VISUAL generated on-demand via slide button
     ],
     multi_kol: [
       { code: 'COVER', name: 'Cover', slides: 1 },
@@ -131,7 +131,7 @@ function getOutputSpec(projectType) {
       { code: 'KOL_PLAN', name: 'KOL Plan Per Country', slides: 2 },
       { code: 'ADDITIONAL_RESOURCES', name: 'Additional Resources', slides: 1 },
       { code: 'BUDGET', name: 'Budget', slides: 1 },
-      { code: 'KEY_VISUAL', name: 'Key Visual & Video Prompts', slides: 2 }
+    // KEY_VISUAL generated on-demand
     ]
   };
   return specs[projectType] || specs.seasonal;
