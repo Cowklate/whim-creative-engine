@@ -270,43 +270,77 @@ app.post('/api/generate', async (req, res) => {
 
     const kb = await loadKB(brief.client || 'mihoyo');
     const allSections = getOutputSpec(brief.projectType);
+    const total = allSections.length;
 
-    console.log(`[GEN] ${brief.client} / ${brief.projectType} / ${brief.game} — ${allSections.length} sections`);
+    console.log(`[GEN] ${brief.client} / ${brief.projectType} / ${brief.game} — ${total} sections`);
+    send({ type: 'progress', message: `Generating ${total} sections one by one...`, percent: 5 });
 
-    // Split into 2 calls if too many sections
-    const splitPoint = allSections.length > 8 ? Math.ceil(allSections.length / 2) : allSections.length;
-    const batches = allSections.length > 8
-      ? [allSections.slice(0, splitPoint), allSections.slice(splitPoint)]
-      : [allSections];
+    const allResults = [];
 
-    let allResults = [];
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      send({ type: 'progress', message: `Generating batch ${i + 1}/${batches.length} (${batch.length} sections)`, percent: 10 + (i * 40) });
+    // Generate ONE section at a time — each call completes in ~5-10s
+    // This keeps Railway alive (data flows every few seconds) and avoids timeout
+    for (let i = 0; i < allSections.length; i++) {
+      const section = allSections[i];
+      const pct = Math.round(5 + ((i / total) * 90));
+      send({ type: 'progress', message: `Generating: ${section.name} (${i + 1}/${total})`, percent: pct });
 
-      const systemPrompt = await buildSystemPrompt(brief, kb, batch);
+      const systemPrompt = `You are the WHIM Creative Engine — AI brain of WHIM, a leading SEA gaming marketing agency.
+
+Deep knowledge of SEA gaming markets (Indonesia, Thailand, Malaysia, Vietnam, Philippines), KOL ecosystems, cultural moments.
+
+━━━ CLIENT KNOWLEDGE BASE ━━━
+${kb}
+━━━ END CLIENT KB ━━━
+
+TARGET REGIONS: ${Array.isArray(brief.regions) ? brief.regions.join(', ') : 'SEA'}
+
+OUTPUT: Return ONLY a single JSON object for the section below. Start with { immediately.
+
+SECTION: ${section.code} — ${section.name}
+SPEC: ${getSectionInstructions(section.code)}
+
+RULES: Real KOL names, real numbers, real platforms. Specific to regions. No long prose. No markdown.`;
+
       const userPrompt = buildUserPrompt(brief, pdfContext);
 
-      const response = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 16000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      });
+      try {
+        const response = await anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 3000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        });
 
-      const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON in response');
-      const parsed = JSON.parse(jsonMatch[0]);
-      allResults.push(...(parsed.sections || []));
-
-      send({ type: 'batch-done', batchNumber: i + 1, sections: parsed.sections, percent: 50 + (i * 40) });
+        const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          try {
+            const data = JSON.parse(jsonMatch[0]);
+            // Support both { "sections": [...] } and direct { ... } formats
+            const sectionData = data.sections?.[0]?.data || data.data || data;
+            const result = { code: section.code, name: section.name, data: sectionData };
+            allResults.push(result);
+            send({ type: 'section-done', section: result, index: i, total, percent: pct });
+            console.log(`[GEN] Section ${i + 1}/${total} done: ${section.code}`);
+          } catch (parseErr) {
+            console.error(`[GEN] JSON parse error on ${section.code}:`, parseErr.message);
+            allResults.push({ code: section.code, name: section.name, data: { error: 'Parse failed', raw: text.slice(0, 200) } });
+          }
+        } else {
+          console.error(`[GEN] No JSON found for ${section.code}`);
+          allResults.push({ code: section.code, name: section.name, data: { error: 'No JSON returned' } });
+        }
+      } catch (sectionErr) {
+        console.error(`[GEN] Section ${section.code} failed:`, sectionErr.message);
+        allResults.push({ code: section.code, name: section.name, data: { error: sectionErr.message } });
+        // Continue with next section rather than aborting
+      }
     }
 
     send({ type: 'done', sections: allResults, percent: 100 });
   } catch (err) {
     console.error('[GEN ERROR]', err.message);
-    if (err.error) console.error('[ERR DETAIL]', JSON.stringify(err.error));
     send({ type: 'error', message: err.message });
   }
   res.end();
