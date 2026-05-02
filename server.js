@@ -270,17 +270,59 @@ RULES:
     }
 
     const response = await anthropic.messages.create(requestParams);
-    const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
 
-    if (!jsonMatch) {
-      console.error(`[GEN] No JSON for ${sectionCode}. Raw: ${text.slice(0, 200)}`);
-      return res.json({ section: { code: sectionCode, name: sectionName, data: { error: 'No JSON returned' } } });
+    // Extract text — with web search, text block comes AFTER tool_use blocks
+    // Must collect text from all text-type blocks
+    const textBlocks = response.content.filter(b => b.type === 'text');
+    const text = textBlocks.map(b => b.text).join('');
+    console.log(`[GEN] ${sectionCode} blocks:[${response.content.map(b=>b.type).join(',')}] textLen:${text.length}`);
+
+    // Extract section data: find the largest valid JSON object in the response text
+    // With web search, Claude often writes explanation before/after the JSON
+    let sectionData = null;
+    
+    // Strategy: find all { } balanced blocks, parse each, pick the right one
+    const candidates = [];
+    let depth = 0, start = -1;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '{') { if (depth === 0) start = i; depth++; }
+      else if (text[i] === '}') {
+        depth--;
+        if (depth === 0 && start >= 0) {
+          candidates.push(text.slice(start, i + 1));
+          start = -1;
+        }
+      }
+    }
+    
+    // Try each candidate, largest first, pick first valid parse that has actual content
+    candidates.sort((a, b) => b.length - a.length);
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        // Skip empty objects and wrappers we don't want
+        if (Object.keys(parsed).length === 0) continue;
+        // Unwrap if it's a wrapper format
+        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections[0]?.data) {
+          sectionData = parsed.sections[0].data; break;
+        }
+        if (parsed.data && typeof parsed.data === 'object' && Object.keys(parsed.data).length > 0) {
+          sectionData = parsed.data; break;
+        }
+        // Accept if it has real content keys (not just code/name wrappers)
+        const keys = Object.keys(parsed);
+        if (keys.length > 0 && !(keys.length <= 2 && keys.every(k => ['code','name'].includes(k)))) {
+          sectionData = parsed; break;
+        }
+      } catch { continue; }
     }
 
-    const data = JSON.parse(jsonMatch[0]);
-    const sectionData = data.sections?.[0]?.data || data.data || data;
-    console.log(`[GEN] ${sectionCode} done`);
+    if (!sectionData) {
+      console.error(`[GEN] No valid JSON for ${sectionCode}. Raw: ${text.slice(0, 300)}`);
+      return res.json({ section: { code: sectionCode, name: sectionName, data: { error: 'No JSON returned', raw: text.slice(0, 200) } } });
+    }
+
+    console.log(`[GEN] ${sectionCode} done — data keys: ${Object.keys(sectionData||{}).join(',')}`);
     res.json({ section: { code: sectionCode, name: sectionName, data: sectionData } });
 
   } catch (err) {
@@ -323,10 +365,32 @@ Apply feedback while keeping structure. Real names, real numbers. JSON only.`;
     });
 
     const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    console.log(`[REGEN] ${sectionCode} text length: ${text.length}`);
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON in response');
-    const updated = JSON.parse(jsonMatch[0]);
-    res.json({ section: updated });
+    
+    const parsed = JSON.parse(jsonMatch[0]);
+    // Normalise: AI may return { code, name, data:{} } or { code, name, ...fields } or just { ...fields }
+    // Always return { section: { code, name, data } } to match generate-section format
+    let sectionData;
+    if (parsed.data && typeof parsed.data === 'object') {
+      sectionData = parsed.data;
+    } else if (parsed.code && parsed.name) {
+      // AI returned wrapper without .data — extract everything except code/name
+      const { code: _c, name: _n, ...rest } = parsed;
+      sectionData = rest;
+    } else {
+      // AI returned the data directly
+      sectionData = parsed;
+    }
+    
+    res.json({ 
+      section: { 
+        code: parsed.code || sectionCode, 
+        name: parsed.name || sectionName || sectionCode, 
+        data: sectionData 
+      } 
+    });
 
   } catch (err) {
     console.error('[REGEN ERROR]', err.message);
