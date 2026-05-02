@@ -551,6 +551,9 @@ async function generate(){
       const pct=Math.round(5+((i/total)*88));
       setPB(`Generating: ${sec.name} (${i+1}/${total})`, pct);
 
+      // Wait 3s between calls to stay under the 30k token/min rate limit
+      if(i > 0) await new Promise(r=>setTimeout(r,3000));
+
       try{
         const r=await fetch('/api/generate-section',{
           method:'POST',headers:{'Content-Type':'application/json','x-auth':AUTH},
