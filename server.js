@@ -48,12 +48,15 @@ const CLIENT_BRAND = {
   netease: { primary: '#27AE60', secondary: '#2C3E50', bg: '#FFFFFF', text: '#1A1A1A', accent: '#3498DB' }
 };
 
-// ── SECTIONS THAT USE WEB SEARCH ──
-const SEARCH_SECTIONS = new Set([
-  'COMPETITOR_MAP', 'VIRAL_FORMATS', 'CONTENT_TREND', 'KOL_PLAN',
-  'MOMENT_INSIGHT', 'AUDIENCE_OVERVIEW', 'COMM_STRATEGY',
-  'CONTENT_DIRECTION', 'ADDITIONAL_RESOURCES', 'PROJECT_BACKGROUND',
-  'POPULAR_CONTENT', 'UPDATE_OVERVIEW', 'COMMUNITY_INSIGHT'
+// ── OPTION C: Sections that use search-then-generate (two API calls) ──
+// These sections benefit most from recency: viral formats, KOL data, content trends
+const SEARCH_THEN_GENERATE = new Set([
+  'VIRAL_FORMATS',
+  'KOL_PLAN',
+  'CONTENT_TREND',
+  'MOMENT_INSIGHT',
+  'KOL_SHOWMATCH_ROSTER',
+  'KOL_MARATHON'
 ]);
 
 // ── OUTPUT SPEC ──
@@ -185,43 +188,95 @@ function getSectionInstructions(code) {
     EVENT_OVERVIEW: 'JSON: { "activities": [{ "name": "KOL & Celeb Showmatch", "icon": "🎮", "description": "..." },{ "name": "KOC Tournament", "icon": "🏆", "description": "..." },{ "name": "Booth Experience", "icon": "🎪", "description": "..." },{ "name": "Drone Show", "icon": "✨", "description": "..." }] }',
     STAGE_RUNDOWN: 'JSON: { "days": [{ "day": "Day 1: BL Battle", "schedule": [{ "start": "14:00", "end": "15:00", "duration": "1h", "activity": "activity name" }] }] }',
     KOL_SHOWMATCH_ROSTER: 'JSON: { "headline": "roster overview", "days": [{ "day": "Day 1 BL Battle", "format": "4 BL actors per team", "kols": [{ "name": "...", "handle": "@...", "platform": "IG/TikTok", "followers": "..." }] }] }',
-    KOC_TOURNAMENT: 'JSON: { "format": "32→16→8 over 3 days", "points": [{ "place": "1st", "points": 8 }], "fees": { "mega": 1900, "macro": 1000, "micro": 700, "nano": 500 } }'
+    KOC_TOURNAMENT: 'JSON: { "format": "32 to 16 to 8 over 3 days", "points": [{ "place": "1st", "points": 8 }], "fees": { "mega": 1900, "macro": 1000, "micro": 700, "nano": 500 } }'
   };
   return inst[code] || 'JSON: { "content": "section content as structured data" }';
+}
+
+// ── SEARCH QUERIES PER SECTION ──
+function getSearchQuery(code, brief) {
+  const game = brief.game || 'gaming';
+  const regions = (brief.regions || []).join(' ');
+  const queries = {
+    VIRAL_FORMATS: `top viral gaming KOL ${regions} 2025 2026 trending format`,
+    KOL_PLAN: `top gaming influencer KOL ${regions} ${game} 2025 2026 followers`,
+    CONTENT_TREND: `${game} gaming content trend ${regions} YouTube TikTok 2025 2026`,
+    MOMENT_INSIGHT: `${brief.moment || 'gaming'} digital behavior ${regions} statistics 2025 2026`,
+    KOL_MARATHON: `top gaming streamer ${regions} live stream 2025 2026`,
+    KOL_SHOWMATCH_ROSTER: `Boys Love KOL Thailand gaming 2025 GMMTV top BL actor`
+  };
+  return queries[code] || `${game} gaming ${regions} 2025`;
 }
 
 // ── USER PROMPT ──
 function buildUserPrompt(brief, pdfContext) {
   let p = `Generate this WHIM proposal section as JSON.\n\nBRIEF:\n`;
-  if (brief.game)         p += `- Game: ${brief.game}\n`;
-  if (brief.projectType)  p += `- Project: ${brief.projectType.replace(/_/g,' ')}\n`;
+  if (brief.game)          p += `- Game: ${brief.game}\n`;
+  if (brief.projectType)   p += `- Project: ${brief.projectType.replace(/_/g,' ')}\n`;
   if (brief.regions?.length) p += `- Regions: ${brief.regions.join(', ')}\n`;
-  if (brief.moment)       p += `- Cultural Moment: ${brief.moment}\n`;
-  if (brief.genre)        p += `- Genre: ${brief.genre}\n`;
-  if (brief.budget)       p += `- Budget: $${Number(brief.budget).toLocaleString()} USD\n`;
-  if (brief.objective)    p += `- Objective: ${brief.objective}\n`;
-  if (brief.hashtag)      p += `- Hashtag: ${brief.hashtag}\n`;
-  if (brief.updateName)   p += `- Update/Collab: ${brief.updateName}\n`;
-  if (brief.collabPartner)p += `- Collab IP: ${brief.collabPartner}\n`;
-  if (brief.eventType)    p += `- Event Type: ${brief.eventType}\n`;
-  if (brief.venueCity)    p += `- Venue City: ${brief.venueCity}\n`;
-  if (brief.eventDates)   p += `- Dates: ${brief.eventDates}\n`;
-  if (brief.usp)          p += `- USP: ${brief.usp}\n`;
-  if (brief.competitors)  p += `- Competitors: ${brief.competitors}\n`;
-  if (pdfContext)         p += `\nCLIENT BRIEF (PDF):\n${pdfContext.slice(0, 5000)}\n`;
+  if (brief.moment)        p += `- Cultural Moment: ${brief.moment}\n`;
+  if (brief.genre)         p += `- Genre: ${brief.genre}\n`;
+  if (brief.budget)        p += `- Budget: $${Number(brief.budget).toLocaleString()} USD\n`;
+  if (brief.objective)     p += `- Objective: ${brief.objective}\n`;
+  if (brief.hashtag)       p += `- Hashtag: ${brief.hashtag}\n`;
+  if (brief.updateName)    p += `- Update/Collab: ${brief.updateName}\n`;
+  if (brief.collabPartner) p += `- Collab IP: ${brief.collabPartner}\n`;
+  if (brief.eventType)     p += `- Event Type: ${brief.eventType}\n`;
+  if (brief.venueCity)     p += `- Venue City: ${brief.venueCity}\n`;
+  if (brief.eventDates)    p += `- Dates: ${brief.eventDates}\n`;
+  if (brief.usp)           p += `- USP: ${brief.usp}\n`;
+  if (brief.competitors)   p += `- Competitors: ${brief.competitors}\n`;
+  if (pdfContext)          p += `\nCLIENT BRIEF (PDF):\n${pdfContext.slice(0, 5000)}\n`;
   p += `\nReturn JSON ONLY. Start with { immediately. No markdown, no commentary.`;
   return p;
 }
 
-// ── /api/sections — returns list of sections for this project type ──
+// ── EXTRACT SECTION DATA FROM RESPONSE TEXT ──
+// Finds all balanced JSON objects in text, picks the largest valid one with real content
+function extractSectionData(text) {
+  const candidates = [];
+  let depth = 0, start = -1;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        candidates.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  // Sort largest first — the main JSON object is almost always the biggest
+  candidates.sort((a, b) => b.length - a.length);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Object.keys(parsed).length === 0) continue;
+      // Unwrap known wrapper formats
+      if (parsed.sections?.[0]?.data) return parsed.sections[0].data;
+      if (parsed.data && typeof parsed.data === 'object' && Object.keys(parsed.data).length > 0) return parsed.data;
+      // Accept directly if it has real content (not just code/name shell)
+      const keys = Object.keys(parsed);
+      if (keys.length > 0 && !(keys.length <= 2 && keys.every(k => ['code','name'].includes(k)))) {
+        return parsed;
+      }
+    } catch { continue; }
+  }
+  return null;
+}
+
+// ── /api/sections ──
 app.post('/api/sections', (req, res) => {
   const { projectType } = req.body;
-  const sections = getOutputSpec(projectType);
-  res.json({ sections });
+  res.json({ sections: getOutputSpec(projectType) });
 });
 
-// ── /api/generate-section — generates ONE section, fresh HTTP request ──
-// This is the core fix: no long SSE connections, no timeouts
+// ── /api/generate-section ──
+// Option C implementation:
+// - SEARCH_THEN_GENERATE sections: Call 1 searches → research summary → Call 2 generates JSON
+// - All other sections: single call, training knowledge, full token budget for JSON
 app.post('/api/generate-section', async (req, res) => {
   const { brief, pdfContext, sectionCode, sectionName } = req.body;
 
@@ -231,8 +286,9 @@ app.post('/api/generate-section', async (req, res) => {
     }
 
     const kb = await loadKB(brief.client || 'mihoyo');
+    const regionStr = Array.isArray(brief.regions) ? brief.regions.join(', ') : 'SEA';
 
-    const systemPrompt = `You are the WHIM Creative Engine — AI brain of WHIM, a leading SEA gaming marketing agency (part of ATTN Group: EVOS Esports + Noctua Games).
+    const systemBase = `You are the WHIM Creative Engine — AI brain of WHIM, a leading SEA gaming marketing agency (part of ATTN Group: EVOS Esports + Noctua Games).
 
 Deep knowledge of SEA gaming markets (Indonesia, Thailand, Malaysia, Vietnam, Philippines), KOL ecosystems, cultural moments, and gaming community behavior.
 
@@ -240,89 +296,87 @@ Deep knowledge of SEA gaming markets (Indonesia, Thailand, Malaysia, Vietnam, Ph
 ${kb}
 ━━━ END CLIENT KB ━━━
 
-TARGET REGIONS: ${Array.isArray(brief.regions) ? brief.regions.join(', ') : 'SEA'}
+TARGET REGIONS: ${regionStr}`;
 
-OUTPUT: Return ONLY a single JSON object for the section below. Start with { immediately.
+    const userPrompt = buildUserPrompt(brief, pdfContext);
+    let researchContext = '';
+
+    // ── OPTION C: Search-then-generate for recency sections ──
+    if (SEARCH_THEN_GENERATE.has(sectionCode)) {
+      console.log(`[GEN] ${sectionCode} — SEARCH phase`);
+      try {
+        const searchQuery = getSearchQuery(sectionCode, brief);
+        const searchResponse = await anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 1500,
+          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+          system: 'You are a SEA gaming market researcher. Search for the requested information and provide a concise factual summary. Focus on names, numbers, and recent examples. Be brief.',
+          messages: [{ role: 'user', content: `Search for: ${searchQuery}\n\nProvide a concise summary of what you find: KOL names, follower counts, content formats, viral examples. Max 300 words.` }]
+        });
+        const searchText = searchResponse.content.filter(b => b.type === 'text').map(b => b.text).join('');
+        if (searchText.trim().length > 20) {
+          researchContext = `\n━━━ LIVE RESEARCH (use this to inform specific names and numbers) ━━━\n${searchText.slice(0, 800)}\n━━━ END RESEARCH ━━━\n`;
+          console.log(`[GEN] ${sectionCode} — search returned ${searchText.length} chars`);
+        }
+      } catch (searchErr) {
+        // Search failed — continue with training knowledge only, don't abort
+        console.warn(`[GEN] ${sectionCode} — search failed (${searchErr.message}), using training knowledge`);
+      }
+    }
+
+    // ── Generate JSON (all sections, with or without research context) ──
+    console.log(`[GEN] ${sectionCode} — GENERATE phase${researchContext ? ' (with live research)' : ''}`);
+
+    const systemPrompt = `${systemBase}${researchContext}
+
+OUTPUT: Return ONLY a single JSON object. Start with { immediately.
 
 SECTION: ${sectionCode} — ${sectionName}
 SPEC: ${getSectionInstructions(sectionCode)}
 
 RULES:
 - Real KOL names, real verifiable people in specified regions
-- Real numbers, real platforms, real cultural references
+- Real numbers, real platforms, real cultural references  
 - Apply CLIENT KB vocabulary exactly
 - Multi-country: per-country specifics, not generic SEA
-- No long prose paragraphs. No markdown. JSON only.`;
+- Populate ALL arrays fully — never return empty arrays
+- No prose, no markdown. JSON only.`;
 
-    const userPrompt = buildUserPrompt(brief, pdfContext);
-
-    const useSearch = SEARCH_SECTIONS.has(sectionCode);
-    console.log(`[GEN] ${sectionCode} — ${useSearch ? 'with web search' : 'no search'}`);
-
-    const requestParams = {
-      model: MODEL,
-      max_tokens: 3000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
-    };
-    if (useSearch) {
-      requestParams.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
-    }
-
-    const response = await anthropic.messages.create(requestParams);
-
-    // Extract text — with web search, text block comes AFTER tool_use blocks
-    // Must collect text from all text-type blocks
-    const textBlocks = response.content.filter(b => b.type === 'text');
-    const text = textBlocks.map(b => b.text).join('');
-    console.log(`[GEN] ${sectionCode} blocks:[${response.content.map(b=>b.type).join(',')}] textLen:${text.length}`);
-
-    // Extract section data: find the largest valid JSON object in the response text
-    // With web search, Claude often writes explanation before/after the JSON
-    let sectionData = null;
-    
-    // Strategy: find all { } balanced blocks, parse each, pick the right one
-    const candidates = [];
-    let depth = 0, start = -1;
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === '{') { if (depth === 0) start = i; depth++; }
-      else if (text[i] === '}') {
-        depth--;
-        if (depth === 0 && start >= 0) {
-          candidates.push(text.slice(start, i + 1));
-          start = -1;
-        }
+    // Retry once on rate limit (429)
+    let response;
+    try {
+      response = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 3000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      });
+    } catch (rateLimitErr) {
+      if (rateLimitErr.status === 429) {
+        console.warn(`[GEN] ${sectionCode} — rate limited, waiting 15s then retrying`);
+        await new Promise(r => setTimeout(r, 15000));
+        response = await anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 3000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        });
+      } else {
+        throw rateLimitErr;
       }
     }
-    
-    // Try each candidate, largest first, pick first valid parse that has actual content
-    candidates.sort((a, b) => b.length - a.length);
-    for (const candidate of candidates) {
-      try {
-        const parsed = JSON.parse(candidate);
-        // Skip empty objects and wrappers we don't want
-        if (Object.keys(parsed).length === 0) continue;
-        // Unwrap if it's a wrapper format
-        if (parsed.sections && Array.isArray(parsed.sections) && parsed.sections[0]?.data) {
-          sectionData = parsed.sections[0].data; break;
-        }
-        if (parsed.data && typeof parsed.data === 'object' && Object.keys(parsed.data).length > 0) {
-          sectionData = parsed.data; break;
-        }
-        // Accept if it has real content keys (not just code/name wrappers)
-        const keys = Object.keys(parsed);
-        if (keys.length > 0 && !(keys.length <= 2 && keys.every(k => ['code','name'].includes(k)))) {
-          sectionData = parsed; break;
-        }
-      } catch { continue; }
-    }
+
+    const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    console.log(`[GEN] ${sectionCode} — textLen:${text.length}`);
+
+    const sectionData = extractSectionData(text);
 
     if (!sectionData) {
-      console.error(`[GEN] No valid JSON for ${sectionCode}. Raw: ${text.slice(0, 300)}`);
-      return res.json({ section: { code: sectionCode, name: sectionName, data: { error: 'No JSON returned', raw: text.slice(0, 200) } } });
+      console.error(`[GEN] ${sectionCode} — no valid JSON. Raw: ${text.slice(0, 200)}`);
+      return res.json({ section: { code: sectionCode, name: sectionName, data: { error: 'Generation failed', raw: text.slice(0, 150) } } });
     }
 
-    console.log(`[GEN] ${sectionCode} done — data keys: ${Object.keys(sectionData||{}).join(',')}`);
+    console.log(`[GEN] ${sectionCode} done — keys: ${Object.keys(sectionData).join(',')}`);
     res.json({ section: { code: sectionCode, name: sectionName, data: sectionData } });
 
   } catch (err) {
@@ -331,7 +385,8 @@ RULES:
   }
 });
 
-// ── /api/regenerate-slide — per-slide feedback iteration ──
+// ── /api/regenerate-slide ──
+// Web search enabled — when team gives feedback, Claude can search for current references
 app.post('/api/regenerate-slide', async (req, res) => {
   const { brief, sectionCode, sectionName, currentData, feedback } = req.body;
 
@@ -342,17 +397,18 @@ app.post('/api/regenerate-slide', async (req, res) => {
 
     const kb = await loadKB(brief.client || 'mihoyo');
 
-    const systemPrompt = `You are the WHIM Creative Engine. Regenerate a single proposal section based on team feedback.
+    const systemPrompt = `You are the WHIM Creative Engine. Regenerate a proposal section based on team feedback.
 
 ━━━ CLIENT KB ━━━
 ${kb}
 ━━━ END KB ━━━
 
-Output ONLY a JSON object: { "code": "SECTION_CODE", "name": "Section Name", "data": { ... } }
+Output ONLY a JSON object with this exact structure:
+{ "code": "${sectionCode}", "name": "${sectionName || sectionCode}", "data": { ... section data ... } }
 
 Section spec: ${getSectionInstructions(sectionCode)}
 
-Apply feedback while keeping structure. Real names, real numbers. JSON only.`;
+Apply feedback while keeping the JSON structure. Real names, real numbers. JSON only.`;
 
     const userPrompt = `BRIEF:\n${JSON.stringify(brief, null, 2)}\n\nCURRENT DATA:\n${JSON.stringify(currentData, null, 2)}\n\nTEAM FEEDBACK: "${feedback}"\n\nRegenerate applying the feedback. JSON only.`;
 
@@ -365,31 +421,28 @@ Apply feedback while keeping structure. Real names, real numbers. JSON only.`;
     });
 
     const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    console.log(`[REGEN] ${sectionCode} text length: ${text.length}`);
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON in response');
-    
-    const parsed = JSON.parse(jsonMatch[0]);
-    // Normalise: AI may return { code, name, data:{} } or { code, name, ...fields } or just { ...fields }
-    // Always return { section: { code, name, data } } to match generate-section format
+    console.log(`[REGEN] ${sectionCode} textLen:${text.length}`);
+
+    const parsed = extractSectionData(text);
+    if (!parsed) throw new Error('No valid JSON in response');
+
+    // Normalise response: always return { section: { code, name, data } }
     let sectionData;
-    if (parsed.data && typeof parsed.data === 'object') {
+    if (parsed.data && typeof parsed.data === 'object' && Object.keys(parsed.data).length > 0) {
       sectionData = parsed.data;
-    } else if (parsed.code && parsed.name) {
-      // AI returned wrapper without .data — extract everything except code/name
-      const { code: _c, name: _n, ...rest } = parsed;
-      sectionData = rest;
+    } else if (parsed.code || parsed.name) {
+      const { code: _c, name: _n, data: _d, ...rest } = parsed;
+      sectionData = _d || rest;
     } else {
-      // AI returned the data directly
       sectionData = parsed;
     }
-    
-    res.json({ 
-      section: { 
-        code: parsed.code || sectionCode, 
-        name: parsed.name || sectionName || sectionCode, 
-        data: sectionData 
-      } 
+
+    res.json({
+      section: {
+        code: sectionCode,
+        name: sectionName || sectionCode,
+        data: sectionData
+      }
     });
 
   } catch (err) {
@@ -411,7 +464,7 @@ app.get('/api/kb/:client', async (req, res) => {
 
 // ── HEALTH ──
 app.get('/health', (_, res) => res.json({
-  ok: true, service: 'WHIM Creative Engine', version: '4.1',
+  ok: true, service: 'WHIM Creative Engine', version: '4.2',
   hasKey: !!process.env.ANTHROPIC_API_KEY,
   hasAuth: !!process.env.AUTH_PASSWORD,
   model: MODEL
@@ -421,7 +474,7 @@ app.get('*', (_, res) => res.sendFile(join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✦ WHIM Creative Engine v4.1 → Port ${PORT}`);
+  console.log(`✦ WHIM Creative Engine v4.2 → Port ${PORT}`);
   console.log(`✦ ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'SET ✓' : 'MISSING ✗'}`);
   console.log(`✦ AUTH_PASSWORD: ${process.env.AUTH_PASSWORD ? 'SET ✓' : 'MISSING'}`);
   console.log(`✦ Model: ${MODEL}`);
