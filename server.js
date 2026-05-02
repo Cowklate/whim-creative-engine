@@ -299,35 +299,10 @@ ${kb}
 TARGET REGIONS: ${regionStr}`;
 
     const userPrompt = buildUserPrompt(brief, pdfContext);
-    let researchContext = '';
 
-    // ── OPTION C: Search-then-generate for recency sections ──
-    if (SEARCH_THEN_GENERATE.has(sectionCode)) {
-      console.log(`[GEN] ${sectionCode} — SEARCH phase`);
-      try {
-        const searchQuery = getSearchQuery(sectionCode, brief);
-        const searchResponse = await anthropic.messages.create({
-          model: MODEL,
-          max_tokens: 1500,
-          tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-          system: 'You are a SEA gaming market researcher. Search for the requested information and provide a concise factual summary. Focus on names, numbers, and recent examples. Be brief.',
-          messages: [{ role: 'user', content: `Search for: ${searchQuery}\n\nProvide a concise summary of what you find: KOL names, follower counts, content formats, viral examples. Max 300 words.` }]
-        });
-        const searchText = searchResponse.content.filter(b => b.type === 'text').map(b => b.text).join('');
-        if (searchText.trim().length > 20) {
-          researchContext = `\n━━━ LIVE RESEARCH (use this to inform specific names and numbers) ━━━\n${searchText.slice(0, 800)}\n━━━ END RESEARCH ━━━\n`;
-          console.log(`[GEN] ${sectionCode} — search returned ${searchText.length} chars`);
-        }
-      } catch (searchErr) {
-        // Search failed — continue with training knowledge only, don't abort
-        console.warn(`[GEN] ${sectionCode} — search failed (${searchErr.message}), using training knowledge`);
-      }
-    }
+    console.log(`[GEN] ${sectionCode} — generating`);
 
-    // ── Generate JSON (all sections, with or without research context) ──
-    console.log(`[GEN] ${sectionCode} — GENERATE phase${researchContext ? ' (with live research)' : ''}`);
-
-    const systemPrompt = `${systemBase}${researchContext}
+    const systemPrompt = `${systemBase}
 
 OUTPUT: Return ONLY a single JSON object. Start with { immediately.
 
