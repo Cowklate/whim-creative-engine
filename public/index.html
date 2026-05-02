@@ -1117,24 +1117,39 @@ function appendKeyVisualPlaceholder(){
 
 async function generateKeyVisual(btn){
   btn.textContent='Generating…';btn.disabled=true;
-  document.getElementById('kv-body').style.opacity='1';
-  document.getElementById('kv-body').innerHTML='<div style="font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--client-primary);text-align:center">Generating visual direction & video prompts…</div>';
+  const kvBody=document.getElementById('kv-body');
+  kvBody.style.opacity='1';
+  kvBody.innerHTML='<div style="font-family:var(--mono);font-size:11px;letter-spacing:1px;color:var(--client-primary);text-align:center;padding:40px">Generating visual direction & Veo prompts…</div>';
 
   try{
-    const r=await fetch('/api/regenerate-slide',{
-      method:'POST',headers:{'Content-Type':'application/json','x-auth':AUTH},
-      body:JSON.stringify({brief:currentBrief,sectionCode:'KEY_VISUAL',currentData:{},feedback:'Generate the key visual direction and Veo/Seedance video prompts for this campaign. Include color palette, character usage, hero image concept, and 3 video prompts (one per main pillar).'})
+    // Use generate-section endpoint — same as all other sections, consistent response format
+    const pdfCtx=pdfContexts.map(p=>`=== PDF: ${p.name} ===\n${p.text.slice(0,4000)}`).join('\n\n');
+    const r=await fetch('/api/generate-section',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-auth':AUTH},
+      body:JSON.stringify({
+        brief:currentBrief,
+        pdfContext:pdfCtx,
+        sectionCode:'KEY_VISUAL',
+        sectionName:'Key Visual & Video Prompts'
+      })
     });
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    if(!r.ok){const t=await r.text();throw new Error(`HTTP ${r.status}: ${t.slice(0,200)}`);}
     const result=await r.json();
-    if(result.section){
-      currentSections.push(result.section);
-      const newSlide=buildSlide(result.section,currentSections.length);
-      document.getElementById('kv-placeholder').replaceWith(newSlide);
-      populateFeedbackTargets();
-    }
+    if(result.error) throw new Error(result.error);
+    if(!result.section) throw new Error('No section in response');
+    
+    currentSections.push(result.section);
+    const newSlide=buildSlide(result.section,currentSections.length);
+    document.getElementById('kv-placeholder').replaceWith(newSlide);
+    // Add to feedback dropdown
+    const sel=document.getElementById('fb-target');
+    const opt=document.createElement('option');
+    opt.value=currentSections.length-1;
+    opt.textContent=`Slide ${currentSections.length} — Key Visual & Video Prompts`;
+    sel.appendChild(opt);
   }catch(e){
-    document.getElementById('kv-body').innerHTML=`<div style="color:#e8302a;font-size:12px;padding:20px">Failed: ${esc(e.message)}</div>`;
+    kvBody.innerHTML=`<div style="color:#e8302a;font-size:12px;padding:20px">Failed: ${esc(e.message)}<br><br><button onclick="generateKeyVisual(document.querySelector('.sa-btn'))" style="font-family:var(--mono);font-size:10px;padding:6px 12px;border:1px solid #e8302a;background:transparent;color:#e8302a;cursor:pointer;border-radius:4px">Retry</button></div>`;
     btn.textContent='✦ Retry';btn.disabled=false;
   }
 }
